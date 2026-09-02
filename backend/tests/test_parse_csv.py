@@ -100,3 +100,52 @@ def test_opening_and_closing_balance_inferred_from_balance_column(tmp_path: Path
     # first balance (900) minus first amount (-100) = 1000 opening balance
     assert result.opening_balance == Decimal("1000.00")
     assert result.closing_balance == Decimal("850.00")
+
+
+def test_credit_card_export_inverts_unsigned_purchase_amounts(tmp_path: Path) -> None:
+    """Discover-style CSVs print purchases positive (money owed increases)
+    and payments/credits negative -- the opposite of Ledger's convention,
+    where a purchase must be negative (money out). Detected via issuer name
+    in the filename here."""
+    csv_text = (
+        "Trans. Date,Post Date,Description,Amount,Category\n"
+        "09/11/2024,09/11/2024,APPLE.COM/BILL,9.99,Merchandise\n"
+        "09/29/2024,09/29/2024,INTERNET PAYMENT - THANK YOU,-10.73,Payments and Credits\n"
+    )
+    path = tmp_path / "Discover-AllAvailable-20260902.csv"
+    path.write_text(csv_text)
+
+    result = parse_csv_file(path)
+
+    assert result.transactions[0].amount == Decimal("-9.99")  # purchase -> money out
+    assert result.transactions[1].amount == Decimal("10.73")  # payment -> money in
+
+
+def test_credit_card_export_detected_via_category_column_without_issuer_name(tmp_path: Path) -> None:
+    csv_text = (
+        "Date,Description,Amount,Category\n"
+        "07/01/2026,SOME STORE,42.00,Merchandise\n"
+    )
+    path = tmp_path / "card_export.csv"  # no recognizable issuer name
+    path.write_text(csv_text)
+
+    result = parse_csv_file(path)
+
+    assert result.transactions[0].amount == Decimal("-42.00")
+
+
+def test_checking_account_export_amount_sign_not_inverted(tmp_path: Path) -> None:
+    """A plain checking-account CSV (no Category column, no issuer name in
+    the filename) must keep its amount sign as printed."""
+    csv_text = (
+        "Date,Description,Amount\n"
+        "07/01/2026,PAYCHECK,1500.00\n"
+        "07/02/2026,GROCERY STORE,-60.00\n"
+    )
+    path = tmp_path / "checking_export.csv"
+    path.write_text(csv_text)
+
+    result = parse_csv_file(path)
+
+    assert result.transactions[0].amount == Decimal("1500.00")
+    assert result.transactions[1].amount == Decimal("-60.00")

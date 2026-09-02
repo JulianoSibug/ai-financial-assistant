@@ -22,3 +22,6 @@ frontend/.vite/
 
 # OS
 .DS_Store
+
+# Internal roadmap notes -- not for the repo
+PHASE_PLAN.md

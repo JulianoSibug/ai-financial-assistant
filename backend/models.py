@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 from backend.config import CATEGORIES
 
 ExtractionMethod = Literal["regex", "csv", "llm"]
-CategorySource = Literal["llm", "cache", "manual", "uncategorized"]
+CategorySource = Literal["llm", "cache", "manual", "rule", "uncategorized"]
 ReconciliationStatus = Literal["ok", "warning", "not_applicable"]
 
 

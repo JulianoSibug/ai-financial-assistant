@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from backend.ingest.normalize import clean_merchant, derive_account_from_filename, normalize_merchant_key
+from datetime import date
+from decimal import Decimal
+
+from backend.ingest.normalize import build_transactions, clean_merchant, derive_account_from_filename, normalize_merchant_key
+from backend.ingest.parse_csv import RawTransaction
 
 
 def test_strips_store_number() -> None:
@@ -43,6 +47,21 @@ def test_strips_trailing_mcc_category_label_then_city_state() -> None:
 def test_does_not_mangle_ordinary_merchant_names() -> None:
     assert clean_merchant("Blue Bottle Coffee") == "Blue Bottle Coffee"
     assert clean_merchant("NETFLIX.COM") == "Netflix.Com"
+
+
+def test_build_transactions_flags_obvious_transfer() -> None:
+    raw = RawTransaction(date=date(2026, 8, 10), description="Paid To - Discover E-Payment Chk 9100001", amount=Decimal("-1412.37"))
+    txs = build_transactions([raw], account="checking", source_file="s.pdf", extraction_method="regex")
+    assert txs[0].is_transfer is True
+    assert txs[0].category == "Transfers"
+    assert txs[0].category_source == "rule"
+
+
+def test_build_transactions_does_not_flag_ordinary_purchase() -> None:
+    raw = RawTransaction(date=date(2026, 8, 10), description="WHOLE FOODS MARKET", amount=Decimal("-42.00"))
+    txs = build_transactions([raw], account="checking", source_file="s.pdf", extraction_method="regex")
+    assert txs[0].is_transfer is False
+    assert txs[0].category_source == "uncategorized"
 
 
 def test_normalize_merchant_key_collapses_variants() -> None:

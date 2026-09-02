@@ -92,6 +92,20 @@ HEADER_SYNONYMS: dict[str, list[str]] = {
     "balance": ["balance", "running balance", "ending balance"],
 }
 
+# Credit-card CSV exports commonly use a single Amount column where POSITIVE
+# means a charge (money out) and NEGATIVE means a payment/credit (money in)
+# -- the opposite of a checking/debit account's usual convention, which a
+# single unsigned Amount column is otherwise assumed to already follow.
+# Detected via the issuer's name in the filename, or a "Category" column
+# (an MCC-style category is a strong tell for a card export; checking-
+# account CSVs don't carry one). Neither signal alone is certain, but
+# together they're a reasonable, explainable heuristic -- not exhaustive.
+_CREDIT_CARD_ISSUER_HINT = re.compile(
+    r"discover|amex|american.?express|chase|citi(?!zens)|capital.?one|visa|mastercard|barclay",
+    re.IGNORECASE,
+)
+_CATEGORY_COLUMN_SYNONYMS = ("category", "mcc category")
+
 
 def score_headers(headers: list[str]) -> dict[str, int]:
     """Map each role (date/description/amount/debit/credit/balance) to the
@@ -125,6 +139,13 @@ def score_headers(headers: list[str]) -> dict[str, int]:
     return mapping
 
 
+def _looks_like_credit_card_export(path: Path, header: list[str]) -> bool:
+    if _CREDIT_CARD_ISSUER_HINT.search(path.name):
+        return True
+    normalized = [h.strip().lower() for h in header]
+    return any(h in _CATEGORY_COLUMN_SYNONYMS for h in normalized)
+
+
 def _sniff_dialect(sample: str) -> type[csv.Dialect]:
     try:
         return csv.Sniffer().sniff(sample, delimiters=",;\t|")
@@ -146,6 +167,7 @@ def parse_csv_file(path: Path) -> ParsedStatement:
     header, data_rows = rows[0], rows[1:]
     mapping = score_headers(header)
     has_debit_credit = "debit" in mapping and "credit" in mapping
+    invert_sign = not has_debit_credit and _looks_like_credit_card_export(path, header)
 
     result = ParsedStatement()
     for row in data_rows:
@@ -169,6 +191,8 @@ def parse_csv_file(path: Path) -> ParsedStatement:
                 amount = Decimal("0")
         elif "amount" in mapping:
             amount = parse_money(row[mapping["amount"]])
+            if amount is not None and invert_sign:
+                amount = -amount
 
         if amount is None:
             continue

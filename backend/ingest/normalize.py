@@ -6,6 +6,7 @@ from pathlib import Path
 
 from backend import db
 from backend.ingest.parse_csv import RawTransaction
+from backend.ingest.transfers import looks_like_transfer
 from backend.models import Transaction
 
 _US_STATES = {
@@ -92,6 +93,17 @@ def build_transactions(
         merchant = clean_merchant(raw.description)
         merchant_key = normalize_merchant_key(merchant)
         tx_id = db.make_transaction_id(account, raw.date.isoformat(), raw.description, raw.amount)
+
+        transaction_kwargs: dict = {}
+        if looks_like_transfer(raw.description):
+            # High-confidence pattern (credit card payment, internal
+            # transfer) -- settled without waiting on LLM categorization.
+            transaction_kwargs = {
+                "category": "Transfers",
+                "is_transfer": True,
+                "category_source": "rule",
+            }
+
         result.append(
             Transaction(
                 id=tx_id,
@@ -103,6 +115,7 @@ def build_transactions(
                 account=account,
                 source_file=source_file,
                 extraction_method=extraction_method,  # type: ignore[arg-type]
+                **transaction_kwargs,
             )
         )
     return result

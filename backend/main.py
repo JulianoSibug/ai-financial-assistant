@@ -184,11 +184,25 @@ def _run_analyze_sync(job: jobs.JobState, period: str | None) -> None:
     try:
         db.init_db(settings.db_path)
 
+        # Reconciliation is pure deterministic math -- it has no LLM
+        # dependency, so it runs regardless of whether the LLM provider is
+        # ready. Gating it behind LLM auth would block the single most
+        # important correctness check in the app on something unrelated.
+        job.emit({"type": "progress", "stage": "reconcile", "message": "Checking statement balances"})
+        files = db.list_files(settings.db_path)
+        for i, file_row in enumerate(files, start=1):
+            if file_row["status"] == "extracted":
+                reconcile_file(settings.db_path, file_row["id"])
+            job.emit({"type": "progress", "stage": "reconcile", "current": i, "total": len(files)})
+
         auth = check_provider_auth(settings.llm_provider)
         if not auth.ok:
             job.emit({
                 "type": "error",
-                "message": f"LLM provider '{settings.llm_provider}' is not ready: {auth.detail}",
+                "message": (
+                    f"Reconciliation complete. Categorization and the narrative summary were "
+                    f"skipped -- LLM provider '{settings.llm_provider}' is not ready: {auth.detail}"
+                ),
             })
             return
 
@@ -200,13 +214,6 @@ def _run_analyze_sync(job: jobs.JobState, period: str | None) -> None:
             job.emit({"type": "progress", "stage": "categorize", "current": completed, "total": total})
 
         categorize_all(settings.db_path, uncategorized, categorize_provider, on_progress=on_progress)
-
-        job.emit({"type": "progress", "stage": "reconcile", "message": "Checking statement balances"})
-        files = db.list_files(settings.db_path)
-        for i, file_row in enumerate(files, start=1):
-            if file_row["status"] == "extracted":
-                reconcile_file(settings.db_path, file_row["id"])
-            job.emit({"type": "progress", "stage": "reconcile", "current": i, "total": len(files)})
 
         resolved_period = period or _default_period()
         if resolved_period is None:

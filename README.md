@@ -1,11 +1,60 @@
 # Ledger
 
-A local-only spend summary app. It reads your bank and credit-card statements
-off disk, categorizes the transactions, and writes a plain-language summary
-of where your money went. Everything runs on your machine: no cloud
-database, no accounts, no hosting. The only thing that ever leaves your
-machine is a redacted slice of transaction data sent to an LLM for
-categorization and prose -- never a dollar figure it computed itself.
+An AI Financial Assistant. It reads your bank and credit-card statements
+off disk, categorizes the transactions, reconciles them against what each
+statement actually claims, and writes a plain-language summary of where
+your money went. Everything today runs on your machine: no cloud database,
+no accounts, no hosting. The only thing that ever leaves your machine is a
+redacted slice of transaction data sent to an LLM for categorization,
+narrative, and (as chat lands) conversational answers -- never a dollar
+figure it computed itself.
+
+## What Ledger does
+
+Ledger is built around seven standing capabilities. Some are fully built,
+some are in progress this phase, some are intentionally deferred -- noted
+honestly below rather than promised ahead of time.
+
+1. **Categorize transactions** -- built. Fixed taxonomy, LLM-assigned,
+   cached per merchant so a second run over the same data makes almost no
+   LLM calls.
+2. **Find patterns in summaries and transactions** -- built (deterministic
+   recurring-charge detection), expanding as chat lands.
+3. **Generate summary reports on request** -- built as a one-shot monthly
+   narrative; on-demand/multi-period generation via chat is in progress.
+4. **Handle interactions through a chat interface** -- in progress.
+5. **Save context of previous chat logs** -- in progress, alongside chat
+   (persisted, resumable conversation history).
+6. **Give advice/observations based on user questions** -- in progress, via
+   chat tool-calling: the LLM only ever selects and phrases numbers a
+   backend tool already computed from real data -- it never sums anything
+   itself. Same guarantee the narrative summary already has, extended to
+   a conversational surface.
+7. **Create parsing code** -- planned, and deliberately supervised, not
+   unattended: an agent proposes parsing fixes (with a required regression
+   test, validated against every previously-seen statement) that a person
+   reviews and approves before anything applies. The parsing code in this
+   repo today was written by hand, one real statement format at a time --
+   this capability is about making that process repeatable and safe rather
+   than replacing the judgment involved in it.
+
+## Roadmap
+
+Ledger is being built in five phases:
+
+1. **Working locally** (current) -- everything above, entirely on your
+   machine.
+2. **Plaid integration** -- live bank connections that supplement, not
+   replace, statement file parsing.
+3. **Cloud deployed** -- auth, multi-tenant storage, and the security work
+   that comes with hosting other people's financial data.
+4. **Internal test group** -- private invitations for feedback and
+   iteration.
+5. **Ship and sell** -- a real product, if it gets there.
+
+Detailed phase-by-phase design notes live in a local, untracked
+`PHASE_PLAN.md` -- internal roadmap thinking, not documentation for anyone
+else who clones this repo, which is why it isn't committed.
 
 ## Prerequisites
 
