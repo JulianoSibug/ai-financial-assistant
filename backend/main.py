@@ -22,7 +22,7 @@ from backend.ingest.parse_csv import parse_tabular_file
 from backend.ingest.parse_pdf import detect_low_extraction, parse_pdf_file
 from backend.ingest.reconcile import reconcile_file
 from backend.llm.categorize import categorize_all, extract_pdf_transactions
-from backend.llm.provider import check_provider_auth, get_provider
+from backend.llm.provider import AuthStatus, check_provider_auth, get_provider
 from backend.llm.summarize import compute_summary_stats, generate_narrative
 from backend.models import CategoryPatch, FixRequestPatch, HealthResponse, SummaryPayload, Transaction
 
@@ -74,6 +74,32 @@ async def ingest_status(job_id: str | None = None) -> StreamingResponse:
 
 
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
+def _categorize_uncategorized(job: jobs.JobState) -> AuthStatus | None:
+    """Categorizes every not-yet-categorized transaction using whichever
+    provider is configured (including the manual stand-in). Only checks
+    auth -- and only pays the subprocess/API cost of get_provider -- when
+    there's actually something to categorize. Returns the auth status if a
+    categorization attempt was (or would have been) made, so a caller like
+    analyze can also gate its own subsequent provider-dependent step on it;
+    returns None when there was nothing uncategorized, so no check ran."""
+    uncategorized = db.get_uncategorized_transactions(settings.db_path)
+    if not uncategorized:
+        return None
+
+    auth = check_provider_auth(settings.llm_provider)
+    if not auth.ok:
+        return auth
+
+    job.emit({"type": "progress", "stage": "categorize", "message": "Categorizing transactions"})
+    categorize_provider = get_provider(settings.llm_provider, model=settings.categorize_model)
+
+    def on_progress(completed: int, total: int) -> None:
+        job.emit({"type": "progress", "stage": "categorize", "current": completed, "total": total})
+
+    categorize_all(settings.db_path, uncategorized, categorize_provider, on_progress=on_progress)
+    return auth
 
 
 def _reconcile_and_flag(file_id: int, filename: str) -> str:
@@ -170,9 +196,18 @@ def _run_ingest_sync(job: jobs.JobState) -> None:
                 errors.append({"file": f.filename, "error": str(e)})
                 job.emit({"type": "progress", "stage": "extract", "current": i, "total": total, "message": f"{f.filename}: failed -- {e}"})
 
+        # Categorization runs right here too, not gated behind "Generate
+        # Summary" -- a freshly-ingested transaction should show up already
+        # labeled (Dining, Travel, etc.) rather than sitting "Uncategorized"
+        # until a separate, LLM-triggering action is taken.
+        categorize_auth = _categorize_uncategorized(job)
+
+        done_message = f"Ingested {new_files} new file(s), {new_tx_count} new transaction(s)."
+        if categorize_auth is not None and not categorize_auth.ok:
+            done_message += f" Categorization skipped -- LLM provider '{settings.llm_provider}' is not ready: {categorize_auth.detail}"
         job.emit({
             "type": "done",
-            "message": f"Ingested {new_files} new file(s), {new_tx_count} new transaction(s).",
+            "message": done_message,
             "current": total, "total": total,
         })
     except Exception as e:  # noqa: BLE001
@@ -221,25 +256,16 @@ def _run_analyze_sync(job: jobs.JobState, period: str | None) -> None:
                 _reconcile_and_flag(file_row["id"], file_row["filename"])
             job.emit({"type": "progress", "stage": "reconcile", "current": i, "total": len(files)})
 
-        auth = check_provider_auth(settings.llm_provider)
-        if not auth.ok:
+        categorize_auth = _categorize_uncategorized(job) or check_provider_auth(settings.llm_provider)
+        if not categorize_auth.ok:
             job.emit({
                 "type": "error",
                 "message": (
                     f"Reconciliation complete. Categorization and the narrative summary were "
-                    f"skipped -- LLM provider '{settings.llm_provider}' is not ready: {auth.detail}"
+                    f"skipped -- LLM provider '{settings.llm_provider}' is not ready: {categorize_auth.detail}"
                 ),
             })
             return
-
-        job.emit({"type": "progress", "stage": "categorize", "message": "Categorizing transactions"})
-        categorize_provider = get_provider(settings.llm_provider, model=settings.categorize_model)
-        uncategorized = db.get_uncategorized_transactions(settings.db_path)
-
-        def on_progress(completed: int, total: int) -> None:
-            job.emit({"type": "progress", "stage": "categorize", "current": completed, "total": total})
-
-        categorize_all(settings.db_path, uncategorized, categorize_provider, on_progress=on_progress)
 
         resolved_period = period or _default_period()
         if resolved_period is None:

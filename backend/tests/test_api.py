@@ -176,6 +176,27 @@ def test_patch_fix_request_rejects_unknown_status(client: TestClient, api_env: P
     assert resp.status_code == 422
 
 
+def test_ingest_categorizes_transactions_without_generate_summary(
+    client: TestClient, api_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Categorization must be automatic too -- a freshly-ingested transaction
+    for a known merchant should already be labeled, with no need to click
+    Generate Summary first."""
+    monkeypatch.setattr(settings, "llm_provider", "manual")
+    make_csv_statement(
+        api_env / "checking.csv",
+        [FixtureTransaction(date(2026, 8, 1), "NETFLIX.COM NETFLIX.COM", Decimal("-15.49"))],
+    )
+
+    client.post("/api/ingest")
+    with client.stream("GET", "/api/ingest/status") as stream:
+        list(stream.iter_lines())
+
+    tx = client.get("/api/transactions").json()["transactions"][0]
+    assert tx["category"] == "Subscriptions"
+    assert tx["category_source"] == "llm"
+
+
 def test_reingest_of_already_flagged_file_does_not_duplicate_fix_request(client: TestClient, api_env: Path) -> None:
     _write_mismatched_csv(api_env / "checking.csv")
     client.post("/api/ingest")
