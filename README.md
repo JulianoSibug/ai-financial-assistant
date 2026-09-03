@@ -123,7 +123,7 @@ calls, because categorization results are cached per merchant.
 | Variable | Meaning |
 |---|---|
 | `STATEMENTS_DIR` | Folder to scan for statements. Quote it if the path has spaces. |
-| `LLM_PROVIDER` | `claude_cli` (default) or `anthropic_api`. |
+| `LLM_PROVIDER` | `claude_cli` (default), `anthropic_api`, or `manual` (temporary categorization-only stand-in -- see "How the LLM is used" below). |
 | `ANTHROPIC_API_KEY` | Only needed for `anthropic_api`. |
 | `ANTHROPIC_MODEL` | Optional. Overrides the model for *both* categorization and the narrative. Leave unset to use the built-in per-task defaults (a small/fast model for categorization, a stronger one for the narrative). |
 | `DB_PATH` | Where the local SQLite database lives (created automatically). |
@@ -176,6 +176,22 @@ them.
   session on the same machine, which doesn't make sense for a shared
   deployment. Set `LLM_PROVIDER=anthropic_api` and `ANTHROPIC_API_KEY` in
   `.env`; nothing else in the app changes.
+- **`manual`** is a temporary stand-in for environments where `claude` isn't
+  reachable at all (this has been true throughout this project's own
+  development sandbox). `backend/llm/manual_provider.py` implements the
+  same provider interface as the two real ones, but instead of calling a
+  model it looks each transaction's merchant up in a hand-assigned mapping
+  (`MERCHANT_CATEGORIES`) covering the real statements this app has been
+  tested against. A merchant not in that mapping falls back to
+  Uncategorized at low confidence, same as a real model would for a
+  genuinely ambiguous one. It **only** covers categorization -- the
+  narrative summary still needs a real model, since fresh prose for
+  whatever stats happen to be computed isn't something a fixed lookup can
+  produce; asking for one returns a plain-language message saying so
+  instead of fabricating text or crashing. Switch back to `claude_cli` or
+  `anthropic_api` once a real connection is available -- nothing else in
+  the app needs to change either way, since `categorize_all()` doesn't know
+  or care which provider it's talking to.
 
 ## Troubleshooting
 

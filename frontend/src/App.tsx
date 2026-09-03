@@ -5,16 +5,16 @@ import { ProcessingView } from "./components/processing/ProcessingView";
 import { SetupView } from "./components/setup/SetupView";
 import { DashboardView } from "./components/dashboard/DashboardView";
 import { TransactionsView } from "./components/transactions/TransactionsView";
-import { ApiError, getHealth, getSummary, startAnalyze, startIngest } from "./lib/api";
-import type { HealthResponse, SummaryPayload } from "./lib/types";
+import { ApiError, getHealth, getPeriods, getSummary, startAnalyze, startIngest } from "./lib/api";
+import type { HealthResponse, Period, SummaryPayload } from "./lib/types";
 
 type Stage =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "setup"; health: HealthResponse }
   | { kind: "processing-ingest"; url: string }
-  | { kind: "processing-analyze"; url: string }
-  | { kind: "ready"; health: HealthResponse; summary: SummaryPayload };
+  | { kind: "processing-analyze"; url: string; period: string }
+  | { kind: "ready"; health: HealthResponse; summary: SummaryPayload; periods: Period[] };
 
 export default function App() {
   const [stage, setStage] = useState<Stage>({ kind: "loading" });
@@ -22,12 +22,13 @@ export default function App() {
   const [starting, setStarting] = useState(false);
   const [generating, setGenerating] = useState(false);
 
-  const loadInitial = useCallback(async () => {
+  const loadInitial = useCallback(async (period?: string) => {
     try {
       const health = await getHealth();
       try {
-        const summary = await getSummary();
-        setStage({ kind: "ready", health, summary });
+        const summary = await getSummary(period);
+        const periods = await getPeriods();
+        setStage({ kind: "ready", health, summary, periods });
       } catch (e) {
         if (e instanceof ApiError && e.status === 404) {
           setStage({ kind: "setup", health });
@@ -56,11 +57,23 @@ export default function App() {
     }
   }
 
+  async function handlePeriodChange(period: string) {
+    if (stage.kind !== "ready") return;
+    try {
+      const summary = await getSummary(period);
+      setStage({ ...stage, summary });
+    } catch (e) {
+      setStage({ kind: "error", message: e instanceof Error ? e.message : "Failed to load that period." });
+    }
+  }
+
   async function handleGenerateSummary() {
+    if (stage.kind !== "ready") return;
+    const period = stage.summary.period;
     setGenerating(true);
     try {
-      const { job_id } = await startAnalyze();
-      setStage({ kind: "processing-analyze", url: `/api/analyze/status?job_id=${job_id}` });
+      const { job_id } = await startAnalyze(period);
+      setStage({ kind: "processing-analyze", url: `/api/analyze/status?job_id=${job_id}`, period });
     } catch (e) {
       setStage({ kind: "error", message: e instanceof Error ? e.message : "Failed to start analysis." });
     } finally {
@@ -107,14 +120,21 @@ export default function App() {
     return (
       <PageShell>
         <TopBar view={view} onViewChange={setView} showNav={false} />
-        <ProcessingView url={stage.url} title="Analyzing" onDone={loadInitial} />
+        <ProcessingView url={stage.url} title="Analyzing" onDone={() => loadInitial(stage.period)} />
       </PageShell>
     );
   }
 
   return (
     <PageShell>
-      <TopBar period={stage.summary.period} view={view} onViewChange={setView} showNav />
+      <TopBar
+        period={stage.summary.period}
+        periods={stage.periods}
+        onPeriodChange={handlePeriodChange}
+        view={view}
+        onViewChange={setView}
+        showNav
+      />
       {view === "dashboard" ? (
         <DashboardView summary={stage.summary} onGenerateSummary={handleGenerateSummary} generating={generating} />
       ) : (

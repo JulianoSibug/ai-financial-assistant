@@ -235,6 +235,11 @@ def _run_analyze_sync(job: jobs.JobState, period: str | None) -> None:
 
 # --- summary / transactions -------------------------------------------------
 
+@app.get("/api/periods")
+def list_periods() -> dict:
+    return {"periods": db.list_available_periods(settings.db_path)}
+
+
 @app.get("/api/summary", response_model=SummaryPayload)
 def get_summary(period: str | None = None) -> SummaryPayload:
     resolved_period = period or _default_period()

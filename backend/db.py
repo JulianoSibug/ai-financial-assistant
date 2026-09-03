@@ -304,6 +304,23 @@ def get_all_transactions(db_path: Path) -> list[Transaction]:
         return [_row_to_transaction(r) for r in rows]
 
 
+def list_available_periods(db_path: Path) -> list[dict[str, Any]]:
+    """Every distinct calendar month with at least one transaction, most
+    recent first -- powers the Ledger view's period selector. A statement
+    export can span years (e.g. a full-history CSV), so the app can't
+    assume "the latest month" is the only one worth looking at."""
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT substr(date, 1, 7) AS period, COUNT(*) AS transaction_count
+            FROM transactions
+            GROUP BY period
+            ORDER BY period DESC
+            """
+        ).fetchall()
+        return [{"period": r["period"], "transaction_count": r["transaction_count"]} for r in rows]
+
+
 def query_transactions(
     db_path: Path,
     *,

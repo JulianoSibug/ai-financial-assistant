@@ -3,8 +3,13 @@
 // user sees was computed in Python; the frontend just renders it.
 
 export type ExtractionMethod = "regex" | "csv" | "llm";
-export type CategorySource = "llm" | "cache" | "manual" | "uncategorized";
+export type CategorySource = "llm" | "cache" | "manual" | "rule" | "uncategorized";
 export type ReconciliationStatus = "ok" | "warning" | "not_applicable";
+
+export interface Period {
+  period: string; // "YYYY-MM"
+  transaction_count: number;
+}
 
 export interface Transaction {
   id: string;

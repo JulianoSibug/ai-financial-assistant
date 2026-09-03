@@ -1,5 +1,6 @@
 import type {
   HealthResponse,
+  Period,
   SummaryPayload,
   Transaction,
   TransactionFilters,
@@ -49,6 +50,11 @@ export function startAnalyze(period?: string): Promise<{ job_id: string }> {
 export function getSummary(period?: string): Promise<SummaryPayload> {
   const qs = period ? `?period=${encodeURIComponent(period)}` : "";
   return request<SummaryPayload>(`/api/summary${qs}`);
+}
+
+export async function getPeriods(): Promise<Period[]> {
+  const { periods } = await request<{ periods: Period[] }>("/api/periods");
+  return periods;
 }
 
 export function getTransactions(filters: TransactionFilters): Promise<TransactionsPage> {

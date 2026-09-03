@@ -122,3 +122,23 @@ def test_export_csv(client: TestClient, api_env: Path) -> None:
     resp = client.get("/api/export?format=csv")
     assert resp.status_code == 200
     assert "Coffee Shop" in resp.text
+
+
+def test_periods_lists_every_month_with_data_most_recent_first(client: TestClient, api_env: Path) -> None:
+    make_csv_statement(
+        api_env / "multi_year.csv",
+        [
+            FixtureTransaction(date(2024, 9, 15), "OLD PURCHASE", Decimal("-10.00")),
+            FixtureTransaction(date(2026, 3, 1), "SPRING PURCHASE", Decimal("-20.00")),
+            FixtureTransaction(date(2026, 8, 1), "RECENT PURCHASE", Decimal("-30.00")),
+        ],
+    )
+    client.post("/api/ingest")
+    with client.stream("GET", "/api/ingest/status") as stream:
+        list(stream.iter_lines())
+
+    resp = client.get("/api/periods")
+    assert resp.status_code == 200
+    periods = resp.json()["periods"]
+    assert [p["period"] for p in periods] == ["2026-08", "2026-03", "2024-09"]
+    assert all(p["transaction_count"] == 1 for p in periods)

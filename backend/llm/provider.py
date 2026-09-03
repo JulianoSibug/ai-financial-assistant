@@ -47,6 +47,12 @@ def check_provider_auth(provider_name: str) -> AuthStatus:
         if settings.anthropic_api_key:
             return AuthStatus("authenticated", "ANTHROPIC_API_KEY is set")
         return AuthStatus("unauthenticated", "ANTHROPIC_API_KEY is not set")
+    if provider_name == "manual":
+        return AuthStatus(
+            "authenticated",
+            "Manual categorization stand-in (backend/llm/manual_provider.py) -- "
+            "not a real LLM connection. Temporary; see PHASE_PLAN.md.",
+        )
     return AuthStatus("unavailable", f"unknown provider {provider_name!r}")
 
 
@@ -62,4 +68,8 @@ def get_provider(provider_name: str, *, model: str | None = None) -> LLMProvider
         from backend.llm.anthropic_api import AnthropicAPIProvider
 
         return AnthropicAPIProvider(model=model)
+    if provider_name == "manual":
+        from backend.llm.manual_provider import ManualCategorizationProvider
+
+        return ManualCategorizationProvider()
     raise ValueError(f"Unknown LLM_PROVIDER: {provider_name!r}")
