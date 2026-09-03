@@ -8,9 +8,11 @@ interface TopBarProps {
   view: "dashboard" | "transactions";
   onViewChange: (view: "dashboard" | "transactions") => void;
   showNav: boolean;
+  onCheckForUpdates?: () => void;
+  checking?: boolean;
 }
 
-export function TopBar({ period, periods, onPeriodChange, view, onViewChange, showNav }: TopBarProps) {
+export function TopBar({ period, periods, onPeriodChange, view, onViewChange, showNav, onCheckForUpdates, checking }: TopBarProps) {
   const canSelectPeriod = period && periods && periods.length > 1 && onPeriodChange;
 
   return (
@@ -35,7 +37,7 @@ export function TopBar({ period, periods, onPeriodChange, view, onViewChange, sh
         )}
       </div>
       {showNav && (
-        <nav className="flex gap-6 text-sm">
+        <nav className="flex items-baseline gap-6 text-sm">
           <button
             onClick={() => onViewChange("dashboard")}
             className={view === "dashboard" ? "text-ink" : "text-ink-secondary hover:text-ink"}
@@ -48,6 +50,15 @@ export function TopBar({ period, periods, onPeriodChange, view, onViewChange, sh
           >
             Transactions
           </button>
+          {onCheckForUpdates && (
+            <button
+              onClick={onCheckForUpdates}
+              disabled={checking}
+              className="text-ink-secondary hover:text-ink disabled:opacity-50"
+            >
+              {checking ? "Checking…" : "Check for new statements"}
+            </button>
+          )}
         </nav>
       )}
     </div>

@@ -5,16 +5,16 @@ import { ProcessingView } from "./components/processing/ProcessingView";
 import { SetupView } from "./components/setup/SetupView";
 import { DashboardView } from "./components/dashboard/DashboardView";
 import { TransactionsView } from "./components/transactions/TransactionsView";
-import { ApiError, getHealth, getPeriods, getSummary, startAnalyze, startIngest } from "./lib/api";
-import type { HealthResponse, Period, SummaryPayload } from "./lib/types";
+import { ApiError, getFixRequests, getHealth, getPeriods, getSummary, resolveFixRequest, startAnalyze, startIngest } from "./lib/api";
+import type { FixRequest, HealthResponse, Period, SummaryPayload } from "./lib/types";
 
 type Stage =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "setup"; health: HealthResponse }
-  | { kind: "processing-ingest"; url: string }
+  | { kind: "processing-ingest"; url: string; returnToPeriod?: string }
   | { kind: "processing-analyze"; url: string; period: string }
-  | { kind: "ready"; health: HealthResponse; summary: SummaryPayload; periods: Period[] };
+  | { kind: "ready"; health: HealthResponse; summary: SummaryPayload; periods: Period[]; fixRequests: FixRequest[] };
 
 export default function App() {
   const [stage, setStage] = useState<Stage>({ kind: "loading" });
@@ -28,7 +28,8 @@ export default function App() {
       try {
         const summary = await getSummary(period);
         const periods = await getPeriods();
-        setStage({ kind: "ready", health, summary, periods });
+        const fixRequests = await getFixRequests();
+        setStage({ kind: "ready", health, summary, periods, fixRequests });
       } catch (e) {
         if (e instanceof ApiError && e.status === 404) {
           setStage({ kind: "setup", health });
@@ -46,14 +47,26 @@ export default function App() {
   }, [loadInitial]);
 
   async function handleReadStatements() {
+    const returnToPeriod = stage.kind === "ready" ? stage.summary.period : undefined;
     setStarting(true);
     try {
       const { job_id } = await startIngest();
-      setStage({ kind: "processing-ingest", url: `/api/ingest/status?job_id=${job_id}` });
+      setStage({ kind: "processing-ingest", url: `/api/ingest/status?job_id=${job_id}`, returnToPeriod });
     } catch (e) {
       setStage({ kind: "error", message: e instanceof Error ? e.message : "Failed to start ingest." });
     } finally {
       setStarting(false);
+    }
+  }
+
+  async function handleResolveFixRequest(id: number, status: "resolved" | "dismissed") {
+    if (stage.kind !== "ready") return;
+    const previous = stage.fixRequests;
+    setStage({ ...stage, fixRequests: previous.filter((r) => r.id !== id) });
+    try {
+      await resolveFixRequest(id, status);
+    } catch {
+      setStage((s) => (s.kind === "ready" ? { ...s, fixRequests: previous } : s));
     }
   }
 
@@ -111,7 +124,7 @@ export default function App() {
     return (
       <PageShell>
         <TopBar view={view} onViewChange={setView} showNav={false} />
-        <ProcessingView url={stage.url} title="Reading statements" onDone={loadInitial} />
+        <ProcessingView url={stage.url} title="Reading statements" onDone={() => loadInitial(stage.returnToPeriod)} />
       </PageShell>
     );
   }
@@ -134,9 +147,17 @@ export default function App() {
         view={view}
         onViewChange={setView}
         showNav
+        onCheckForUpdates={handleReadStatements}
+        checking={starting}
       />
       {view === "dashboard" ? (
-        <DashboardView summary={stage.summary} onGenerateSummary={handleGenerateSummary} generating={generating} />
+        <DashboardView
+          summary={stage.summary}
+          onGenerateSummary={handleGenerateSummary}
+          generating={generating}
+          fixRequests={stage.fixRequests}
+          onResolveFixRequest={handleResolveFixRequest}
+        />
       ) : (
         <TransactionsView />
       )}

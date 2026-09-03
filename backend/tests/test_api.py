@@ -124,6 +124,78 @@ def test_export_csv(client: TestClient, api_env: Path) -> None:
     assert "Coffee Shop" in resp.text
 
 
+def _write_mismatched_csv(path: Path) -> None:
+    """A statement whose declared closing balance doesn't match opening +
+    transactions -- parse_csv.py derives opening_balance from the first row's
+    balance minus its amount, and closing_balance literally off the last
+    row's balance, so a wrong final balance produces a genuine mismatch."""
+    path.write_text(
+        "Date,Description,Amount,Balance\n"
+        "08/01/2026,SOMETHING,-20.00,980.00\n"
+        "08/02/2026,SOMETHING ELSE,-30.00,500.00\n"
+    )
+
+
+def test_ingest_flags_reconciliation_warning_without_generate_summary(client: TestClient, api_env: Path) -> None:
+    """Detection must be automatic -- a bad statement should be queued for
+    review right after ingest, with no need to click Generate Summary first."""
+    _write_mismatched_csv(api_env / "checking.csv")
+
+    client.post("/api/ingest")
+    with client.stream("GET", "/api/ingest/status") as stream:
+        list(stream.iter_lines())
+
+    resp = client.get("/api/fix-requests")
+    assert resp.status_code == 200
+    fix_requests = resp.json()["fix_requests"]
+    assert len(fix_requests) == 1
+    assert fix_requests[0]["trigger"] == "reconciliation_warning"
+    assert fix_requests[0]["filename"] == "checking.csv"
+
+
+def test_patch_fix_request_resolves_and_removes_it_from_open_list(client: TestClient, api_env: Path) -> None:
+    _write_mismatched_csv(api_env / "checking.csv")
+    client.post("/api/ingest")
+    with client.stream("GET", "/api/ingest/status") as stream:
+        list(stream.iter_lines())
+    fix_request_id = client.get("/api/fix-requests").json()["fix_requests"][0]["id"]
+
+    resp = client.patch(f"/api/fix-requests/{fix_request_id}", json={"status": "resolved"})
+    assert resp.status_code == 200
+    assert client.get("/api/fix-requests").json()["fix_requests"] == []
+
+
+def test_patch_fix_request_rejects_unknown_status(client: TestClient, api_env: Path) -> None:
+    _write_mismatched_csv(api_env / "checking.csv")
+    client.post("/api/ingest")
+    with client.stream("GET", "/api/ingest/status") as stream:
+        list(stream.iter_lines())
+    fix_request_id = client.get("/api/fix-requests").json()["fix_requests"][0]["id"]
+
+    resp = client.patch(f"/api/fix-requests/{fix_request_id}", json={"status": "not-a-real-status"})
+    assert resp.status_code == 422
+
+
+def test_reingest_of_already_flagged_file_does_not_duplicate_fix_request(client: TestClient, api_env: Path) -> None:
+    _write_mismatched_csv(api_env / "checking.csv")
+    client.post("/api/ingest")
+    with client.stream("GET", "/api/ingest/status") as stream:
+        list(stream.iter_lines())
+
+    # Re-running ingest is a no-op for an already-hashed file, and re-running
+    # analyze's reconcile backfill on the same still-broken file must not
+    # spam a second open request for it.
+    client.post("/api/ingest")
+    with client.stream("GET", "/api/ingest/status") as stream:
+        list(stream.iter_lines())
+    client.post("/api/analyze")
+    with client.stream("GET", "/api/analyze/status") as stream:
+        list(stream.iter_lines())
+
+    fix_requests = client.get("/api/fix-requests").json()["fix_requests"]
+    assert len(fix_requests) == 1
+
+
 def test_periods_lists_every_month_with_data_most_recent_first(client: TestClient, api_env: Path) -> None:
     make_csv_statement(
         api_env / "multi_year.csv",

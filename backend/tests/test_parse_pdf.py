@@ -5,7 +5,14 @@ from decimal import Decimal
 from pathlib import Path
 
 from backend.ingest.parse_csv import ParsedStatement, RawTransaction
-from backend.ingest.parse_pdf import _extract_balance_hints, guess_statement_year, parse_page_regex, parse_pdf_file
+from backend.ingest.parse_pdf import (
+    PageResult,
+    _extract_balance_hints,
+    detect_low_extraction,
+    guess_statement_year,
+    parse_page_regex,
+    parse_pdf_file,
+)
 from backend.tests.fixtures.build_fixtures import FixtureTransaction, make_pdf_statement
 
 
@@ -267,3 +274,27 @@ def test_balance_marker_excluded_even_with_ocr_injected_space() -> None:
     page_text = "08-21 Ending B alance 6.29\n"
     transactions = parse_page_regex(page_text, year_hint=2026)
     assert transactions == []
+
+
+def test_detect_low_extraction_flags_pages_with_no_matches() -> None:
+    page_results = [
+        PageResult(1, [RawTransaction(date=date(2026, 8, 1), description="A", amount=Decimal("-1.00"))], "regex"),
+        PageResult(2, [], "llm", flagged=True),
+        PageResult(5, [], "llm", flagged=True),
+    ]
+    flagged, detail = detect_low_extraction(page_results)
+    assert flagged is True
+    assert detail is not None
+    assert "2" in detail and "5" in detail
+
+
+def test_detect_low_extraction_ignores_legitimately_blank_pages() -> None:
+    """A page with no transactions that never looked like a transaction page
+    in the first place (e.g. a cover page) must not be flagged."""
+    page_results = [
+        PageResult(1, [], "regex", flagged=False),
+        PageResult(2, [RawTransaction(date=date(2026, 8, 1), description="A", amount=Decimal("-1.00"))], "regex"),
+    ]
+    flagged, detail = detect_low_extraction(page_results)
+    assert flagged is False
+    assert detail is None

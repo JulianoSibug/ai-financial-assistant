@@ -212,6 +212,7 @@ class PageResult:
     page_number: int
     transactions: list[RawTransaction]
     extraction_method: str  # 'regex' | 'llm'
+    flagged: bool = False  # looked like a transaction page but nothing was extracted
 
 
 def parse_pdf_file(
@@ -237,7 +238,7 @@ def parse_pdf_file(
         if llm_fallback is not None:
             llm_matches = llm_fallback(page_text)
             if len(llm_matches) >= len(regex_matches):
-                page_results.append(PageResult(i, llm_matches, "llm"))
+                page_results.append(PageResult(i, llm_matches, "llm", flagged=len(llm_matches) == 0))
                 result.transactions.extend(llm_matches)
             else:
                 # The fallback returned fewer transactions than the regex
@@ -245,14 +246,26 @@ def parse_pdf_file(
                 # if the LLM isn't actually available and the call failed
                 # silently. Keep the regex result rather than discard real,
                 # already-parsed data for nothing.
-                page_results.append(PageResult(i, regex_matches, "regex"))
+                page_results.append(PageResult(i, regex_matches, "regex", flagged=len(regex_matches) == 0))
                 result.transactions.extend(regex_matches)
         else:
-            page_results.append(PageResult(i, regex_matches, "regex"))
+            page_results.append(PageResult(i, regex_matches, "regex", flagged=len(regex_matches) == 0))
             result.transactions.extend(regex_matches)
 
     _extract_balance_hints(full_text, result)
     return result, page_results
+
+
+def detect_low_extraction(page_results: list[PageResult]) -> tuple[bool, str | None]:
+    """Signals when one or more pages looked like they contained transactions
+    but extraction (regex and LLM fallback) came up with none -- distinct from
+    reconciliation, which only fires when there's a checkable balance figure."""
+    flagged_pages = [pr.page_number for pr in page_results if pr.flagged]
+    if not flagged_pages:
+        return False, None
+    pages_str = ", ".join(str(p) for p in flagged_pages)
+    plural = "s" if len(flagged_pages) > 1 else ""
+    return True, f"Page{plural} {pages_str} look{'' if plural else 's'} like they contain transactions but none were extracted."
 
 
 _MONEY_TOKEN = r"([\-\(]?\$?[\d,]+\.\d{2}\)?-?)"

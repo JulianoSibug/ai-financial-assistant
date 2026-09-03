@@ -4,9 +4,11 @@ interface BannerProps {
   tone?: "warning" | "note";
   children: ReactNode;
   dismissible?: boolean;
+  dismissLabel?: string;
+  onDismiss?: () => void;
 }
 
-export function Banner({ tone = "note", children, dismissible = true }: BannerProps) {
+export function Banner({ tone = "note", children, dismissible = true, dismissLabel = "Dismiss", onDismiss }: BannerProps) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
 
@@ -17,11 +19,14 @@ export function Banner({ tone = "note", children, dismissible = true }: BannerPr
       <div className="text-ink">{children}</div>
       {dismissible && (
         <button
-          onClick={() => setDismissed(true)}
+          onClick={() => {
+            setDismissed(true);
+            onDismiss?.();
+          }}
           aria-label="Dismiss"
           className="shrink-0 text-ink-secondary hover:text-ink"
         >
-          Dismiss
+          {dismissLabel}
         </button>
       )}
     </div>

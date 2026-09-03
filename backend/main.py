@@ -19,12 +19,12 @@ from backend.config import settings
 from backend.ingest.discover import discover_files
 from backend.ingest.normalize import build_transactions, derive_account_from_filename
 from backend.ingest.parse_csv import parse_tabular_file
-from backend.ingest.parse_pdf import parse_pdf_file
+from backend.ingest.parse_pdf import detect_low_extraction, parse_pdf_file
 from backend.ingest.reconcile import reconcile_file
 from backend.llm.categorize import categorize_all, extract_pdf_transactions
 from backend.llm.provider import check_provider_auth, get_provider
 from backend.llm.summarize import compute_summary_stats, generate_narrative
-from backend.models import CategoryPatch, HealthResponse, SummaryPayload, Transaction
+from backend.models import CategoryPatch, FixRequestPatch, HealthResponse, SummaryPayload, Transaction
 
 
 @asynccontextmanager
@@ -76,6 +76,20 @@ async def ingest_status(job_id: str | None = None) -> StreamingResponse:
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
 
 
+def _reconcile_and_flag(file_id: int, filename: str) -> str:
+    """Reconciles one file and, on a warning, queues it in the durable
+    fix_requests review table (deduped -- a no-op if already open)."""
+    status = reconcile_file(settings.db_path, file_id)
+    if status == "warning":
+        warnings = db.get_reconciliation_warnings(settings.db_path)
+        detail = next((w["detail"] for w in warnings if w["file_id"] == file_id), None)
+        db.create_fix_request(
+            settings.db_path, file_id, "reconciliation_warning",
+            detail or f"{filename} does not reconcile against its statement balance.",
+        )
+    return status
+
+
 def _run_ingest_sync(job: jobs.JobState) -> None:
     try:
         db.init_db(settings.db_path)
@@ -120,10 +134,12 @@ def _run_ingest_sync(job: jobs.JobState) -> None:
                         transactions.extend(
                             build_transactions(pr.transactions, account=account, source_file=f.filename, extraction_method=pr.extraction_method)
                         )
+                    low_extraction, low_extraction_detail = detect_low_extraction(page_results)
                 elif f.file_type in ("csv", "ofx", "qfx"):
                     parsed = parse_tabular_file(f.path, f.file_type)
                     account = parsed.account_hint or derive_account_from_filename(f.filename)
                     transactions = build_transactions(parsed.transactions, account=account, source_file=f.filename, extraction_method="csv")
+                    low_extraction, low_extraction_detail = False, None
                 else:
                     raise ValueError(f"unsupported file type: {f.file_type}")
 
@@ -136,6 +152,16 @@ def _run_ingest_sync(job: jobs.JobState) -> None:
                     total_credits_cents=db.to_cents(parsed.total_credits) if parsed.total_credits is not None else None,
                 )
                 db.update_file_status(settings.db_path, file_id, status="extracted", transaction_count=inserted, account=account, mark_extracted=True)
+
+                # Detection is automatic and runs regardless of whether the
+                # user ever clicks "Generate Summary" -- reconciliation is
+                # pure deterministic math with no LLM dependency (see the
+                # analyze-side note below), and a low-extraction PDF page is
+                # visible the moment it's ingested.
+                _reconcile_and_flag(file_id, f.filename)
+                if low_extraction:
+                    db.create_fix_request(settings.db_path, file_id, "low_extraction", low_extraction_detail)
+
                 new_files += 1
                 new_tx_count += inserted
                 job.emit({"type": "progress", "stage": "extract", "current": i, "total": total, "message": f"{f.filename}: {inserted} transaction(s)"})
@@ -192,7 +218,7 @@ def _run_analyze_sync(job: jobs.JobState, period: str | None) -> None:
         files = db.list_files(settings.db_path)
         for i, file_row in enumerate(files, start=1):
             if file_row["status"] == "extracted":
-                reconcile_file(settings.db_path, file_row["id"])
+                _reconcile_and_flag(file_row["id"], file_row["filename"])
             job.emit({"type": "progress", "stage": "reconcile", "current": i, "total": len(files)})
 
         auth = check_provider_auth(settings.llm_provider)
@@ -238,6 +264,17 @@ def _run_analyze_sync(job: jobs.JobState, period: str | None) -> None:
 @app.get("/api/periods")
 def list_periods() -> dict:
     return {"periods": db.list_available_periods(settings.db_path)}
+
+
+@app.get("/api/fix-requests")
+def list_fix_requests() -> dict:
+    return {"fix_requests": db.list_fix_requests(settings.db_path, status="open")}
+
+
+@app.patch("/api/fix-requests/{fix_request_id}")
+def patch_fix_request(fix_request_id: int, patch: FixRequestPatch) -> dict:
+    db.resolve_fix_request(settings.db_path, fix_request_id, patch.status)
+    return {"ok": True}
 
 
 @app.get("/api/summary", response_model=SummaryPayload)

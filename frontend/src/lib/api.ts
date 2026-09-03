@@ -1,4 +1,5 @@
 import type {
+  FixRequest,
   HealthResponse,
   Period,
   SummaryPayload,
@@ -55,6 +56,18 @@ export function getSummary(period?: string): Promise<SummaryPayload> {
 export async function getPeriods(): Promise<Period[]> {
   const { periods } = await request<{ periods: Period[] }>("/api/periods");
   return periods;
+}
+
+export async function getFixRequests(): Promise<FixRequest[]> {
+  const { fix_requests } = await request<{ fix_requests: FixRequest[] }>("/api/fix-requests");
+  return fix_requests;
+}
+
+export function resolveFixRequest(id: number, status: "resolved" | "dismissed"): Promise<{ ok: boolean }> {
+  return request(`/api/fix-requests/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
 }
 
 export function getTransactions(filters: TransactionFilters): Promise<TransactionsPage> {

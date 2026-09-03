@@ -97,6 +97,16 @@ CREATE TABLE IF NOT EXISTS period_summary (
     stats_json TEXT NOT NULL,
     generated_at TEXT NOT NULL
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS fix_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    trigger TEXT NOT NULL,
+    signal_detail TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+) STRICT;
 """
 
 
@@ -548,6 +558,51 @@ def get_reconciliation_warnings(db_path: Path) -> list[dict[str, Any]]:
             """
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# --- fix requests ------------------------------------------------------
+
+def create_fix_request(db_path: Path, file_id: int, trigger: str, signal_detail: str) -> None:
+    """Records a detected parsing/reconciliation problem for human review.
+    Skips the insert if an open request already exists for this file+trigger,
+    so re-running ingest/analyze on a still-broken file doesn't spam duplicates."""
+    with get_connection(db_path) as conn:
+        existing = conn.execute(
+            "SELECT id FROM fix_requests WHERE file_id = ? AND trigger = ? AND status = 'open'",
+            (file_id, trigger),
+        ).fetchone()
+        if existing is not None:
+            return
+        conn.execute(
+            """
+            INSERT INTO fix_requests (file_id, trigger, signal_detail, status, created_at)
+            VALUES (?, ?, ?, 'open', ?)
+            """,
+            (file_id, trigger, signal_detail, now_iso()),
+        )
+
+
+def list_fix_requests(db_path: Path, status: str = "open") -> list[dict[str, Any]]:
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT fr.*, f.filename
+            FROM fix_requests fr
+            JOIN files f ON f.id = fr.file_id
+            WHERE fr.status = ?
+            ORDER BY fr.created_at
+            """,
+            (status,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def resolve_fix_request(db_path: Path, fix_request_id: int, status: str) -> None:
+    with get_connection(db_path) as conn:
+        conn.execute(
+            "UPDATE fix_requests SET status = ?, resolved_at = ? WHERE id = ?",
+            (status, now_iso(), fix_request_id),
+        )
 
 
 # --- period summary cache --------------------------------------------------

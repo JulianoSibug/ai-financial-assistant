@@ -46,6 +46,19 @@ export interface ReconciliationWarning {
   detail: string | null;
 }
 
+export type FixRequestTrigger = "reconciliation_warning" | "low_extraction";
+
+export interface FixRequest {
+  id: number;
+  file_id: number;
+  filename: string;
+  trigger: FixRequestTrigger;
+  signal_detail: string;
+  status: "open" | "resolved" | "dismissed";
+  created_at: string;
+  resolved_at: string | null;
+}
+
 export interface RecurringCharge {
   merchant: string;
   amount: string | null;

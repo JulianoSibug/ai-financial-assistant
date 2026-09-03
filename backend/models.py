@@ -110,6 +110,17 @@ class CategoryPatch(BaseModel):
         return v
 
 
+class FixRequestPatch(BaseModel):
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def status_must_be_valid(cls, v: str) -> str:
+        if v not in ("resolved", "dismissed"):
+            raise ValueError("status must be 'resolved' or 'dismissed'")
+        return v
+
+
 class LLMCategorization(BaseModel):
     """One element of the categorization batch response, validated before use."""
 

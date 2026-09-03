@@ -1,7 +1,8 @@
-import type { SummaryPayload } from "../../lib/types";
+import type { FixRequest, SummaryPayload } from "../../lib/types";
 import { Button } from "../shared/Button";
 import { CategoryBreakdown } from "./CategoryBreakdown";
 import { DailySpendChart } from "./DailySpendChart";
+import { FixRequestsBanner } from "./FixRequestsBanner";
 import { HeaderFigures } from "./HeaderFigures";
 import { NarrativeReport } from "./NarrativeReport";
 import { ReconciliationBanner } from "./ReconciliationBanner";
@@ -12,14 +13,17 @@ interface DashboardViewProps {
   summary: SummaryPayload;
   onGenerateSummary: () => void;
   generating: boolean;
+  fixRequests: FixRequest[];
+  onResolveFixRequest: (id: number, status: "resolved" | "dismissed") => void;
 }
 
-export function DashboardView({ summary, onGenerateSummary, generating }: DashboardViewProps) {
+export function DashboardView({ summary, onGenerateSummary, generating, fixRequests, onResolveFixRequest }: DashboardViewProps) {
   return (
     <div className="animate-fade-in">
       <HeaderFigures totalOut={summary.total_out} totalIn={summary.total_in} net={summary.net} />
 
       <ReconciliationBanner warnings={summary.reconciliation_warnings} />
+      <FixRequestsBanner requests={fixRequests} onResolve={onResolveFixRequest} />
 
       <section className="mb-10">
         <div className="mb-4 flex items-baseline justify-between">
