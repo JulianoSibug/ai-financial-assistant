@@ -23,7 +23,7 @@ export function DailyTransactionsPanel({ date, onClose }: DailyTransactionsPanel
       date_to: date,
       page: 1,
       page_size: 200,
-      include_transfers: true,
+      include_transfers: false,
       sort_by: sort.sort_by,
       sort_dir: sort.sort_dir,
     }),
