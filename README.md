@@ -18,8 +18,10 @@ honestly below rather than promised ahead of time.
 1. **Categorize transactions** -- built. Fixed taxonomy, LLM-assigned,
    cached per merchant so a second run over the same data makes almost no
    LLM calls.
-2. **Find patterns in summaries and transactions** -- built (deterministic
-   recurring-charge detection), expanding as chat lands.
+2. **Find patterns in summaries and transactions** -- in progress. A
+   deterministic recurring-charge detector was tried and removed: the
+   same-amount/consecutive-months heuristic produced too many false
+   positives to trust. Waits on chat tool-calling instead.
 3. **Generate summary reports on request** -- built as a one-shot monthly
    narrative; on-demand/multi-period generation via chat is in progress.
 4. **Handle interactions through a chat interface** -- in progress.
@@ -143,9 +145,8 @@ two things:
    forever -- a second run over the same month makes close to zero LLM calls.
 2. **The narrative summary** (`backend/llm/summarize.py`) -- handed a
    finished block of already-computed statistics (totals, category
-   breakdowns, top merchants, recurring charges) and asked to write prose
-   around it. It's explicitly instructed not to calculate or estimate
-   anything.
+   breakdowns, top merchants) and asked to write prose around it. It's
+   explicitly instructed not to calculate or estimate anything.
 
 **Redaction happens first, always** (`backend/llm/redact.py`). Before any
 text reaches the model -- including the PDF-extraction fallback below --

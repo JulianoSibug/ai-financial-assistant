@@ -1,8 +1,8 @@
 """Stage 5 support + narrative generation.
 
-Every number here is computed in Python from parsed data -- recurring-charge
-detection is a deterministic pass, and the narrative prompt hands the model
-a finished stats block it can only write prose around, never compute from.
+Every number here is computed in Python from parsed data -- the narrative
+prompt hands the model a finished stats block it can only write prose
+around, never compute from.
 """
 from __future__ import annotations
 
@@ -20,8 +20,6 @@ from backend.models import (
     DailyPoint,
     MerchantTotal,
     ReconciliationWarning,
-    RecurringCharge,
-    Transaction,
 )
 
 NARRATIVE_PROMPT_TEMPLATE = """You are writing a monthly spending summary for the person whose money this is.
@@ -37,8 +35,8 @@ Write:
 2. Three to five observations, each one sentence, that a person could act on. Prioritize
    things that are surprising, not things that are obvious. "You spent money on groceries"
    is not an observation. "Dining is 34% above your grocery spend" is.
-3. A short "worth a look" list: recurring charges, duplicate charges, unusually large
-   one-offs, or categories that moved sharply.
+3. A short "worth a look" list: duplicate charges, unusually large one-offs,
+   or categories that moved sharply.
 
 Do not moralize, do not tell me to make a budget, do not use the word "journey".
 If the data is too thin to support a claim, say so instead of filling space.
@@ -61,73 +59,6 @@ def _prior_period(period: str) -> str:
 
 def _date_range(start: date, end: date) -> list[date]:
     return [start + timedelta(days=i) for i in range((end - start).days + 1)]
-
-
-def detect_recurring_charges(transactions: list[Transaction]) -> list[RecurringCharge]:
-    """Same normalized merchant + same amount 2+ times, or same merchant
-    across 2+ consecutive months (amount may vary)."""
-    by_merchant: dict[str, list[Transaction]] = defaultdict(list)
-    for t in transactions:
-        if t.amount < 0 and not t.is_transfer:
-            by_merchant[t.merchant_normalized].append(t)
-
-    results: list[RecurringCharge] = []
-    for txs in by_merchant.values():
-        if len(txs) < 2:
-            continue
-        txs_sorted = sorted(txs, key=lambda t: t.date)
-        display_name = txs_sorted[-1].merchant
-
-        amount_counts: dict[Decimal, int] = defaultdict(int)
-        for t in txs_sorted:
-            amount_counts[t.amount] += 1
-        best_amount, best_count = max(amount_counts.items(), key=lambda kv: kv[1])
-
-        if best_count >= 2:
-            same_amount_dates = [t.date for t in txs_sorted if t.amount == best_amount]
-            results.append(
-                RecurringCharge(
-                    merchant=display_name, amount=-best_amount,
-                    cadence=_infer_cadence(same_amount_dates), occurrences=best_count,
-                )
-            )
-            continue
-
-        months = sorted({(t.date.year, t.date.month) for t in txs_sorted})
-        if len(months) >= 2 and _are_consecutive_months(months):
-            results.append(
-                RecurringCharge(
-                    merchant=display_name, amount=None,
-                    cadence=_infer_cadence([t.date for t in txs_sorted]), occurrences=len(txs_sorted),
-                )
-            )
-
-    return results
-
-
-def _are_consecutive_months(months: list[tuple[int, int]]) -> bool:
-    for (y1, m1), (y2, m2) in zip(months, months[1:]):
-        expected = (y1, m1 + 1) if m1 < 12 else (y1 + 1, 1)
-        if (y2, m2) != expected:
-            return False
-    return True
-
-
-def _infer_cadence(dates: list[date]) -> str:
-    dates = sorted(dates)
-    if len(dates) < 2:
-        return "unknown"
-    gaps = [(b - a).days for a, b in zip(dates, dates[1:])]
-    avg_gap = sum(gaps) / len(gaps)
-    if avg_gap <= 10:
-        return "weekly"
-    if avg_gap <= 20:
-        return "biweekly"
-    if avg_gap <= 45:
-        return "monthly"
-    if avg_gap <= 100:
-        return "quarterly"
-    return "irregular"
 
 
 def compute_summary_stats(db_path: Path, period: str) -> dict:
@@ -203,7 +134,6 @@ def compute_summary_stats(db_path: Path, period: str) -> dict:
         "top_merchants": top_merchants,
         "largest_transactions": largest_transactions,
         "daily_series": daily_series,
-        "recurring_charges": detect_recurring_charges(all_tx),
         "reconciliation_warnings": reconciliation_warnings,
     }
 

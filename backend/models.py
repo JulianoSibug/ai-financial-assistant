@@ -49,13 +49,6 @@ class ReconciliationWarning(BaseModel):
     detail: str | None = None
 
 
-class RecurringCharge(BaseModel):
-    merchant: str
-    amount: Decimal | None = None
-    cadence: str
-    occurrences: int
-
-
 class CategoryTotal(BaseModel):
     category: str
     total: Decimal
@@ -85,7 +78,6 @@ class SummaryPayload(BaseModel):
     top_merchants: list[MerchantTotal]
     largest_transactions: list[Transaction]
     daily_series: list[DailyPoint]
-    recurring_charges: list[RecurringCharge]
     reconciliation_warnings: list[ReconciliationWarning]
     narrative_markdown: str | None = None
 

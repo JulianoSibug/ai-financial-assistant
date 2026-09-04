@@ -59,13 +59,6 @@ export interface FixRequest {
   resolved_at: string | null;
 }
 
-export interface RecurringCharge {
-  merchant: string;
-  amount: string | null;
-  cadence: string;
-  occurrences: number;
-}
-
 export interface CategoryTotal {
   category: string;
   total: string;
@@ -95,7 +88,6 @@ export interface SummaryPayload {
   top_merchants: MerchantTotal[];
   largest_transactions: Transaction[];
   daily_series: DailyPoint[];
-  recurring_charges: RecurringCharge[];
   reconciliation_warnings: ReconciliationWarning[];
   narrative_markdown: string | null;
 }

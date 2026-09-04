@@ -4,7 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from backend import db
-from backend.llm.summarize import compute_summary_stats, detect_recurring_charges
+from backend.llm.summarize import compute_summary_stats
 from backend.models import Transaction
 
 
@@ -35,33 +35,3 @@ def test_compute_summary_stats_basic_totals(db_path: Path) -> None:
     assert stats["total_in"] == Decimal("2000.00")
     assert stats["net"] == Decimal("1915.00")
     assert stats["transaction_count"] == 3  # transfer excluded from count too
-
-
-def test_detect_recurring_charges_same_amount_twice() -> None:
-    txs = [
-        _tx("Netflix", "Netflix", "2026-07-01", Decimal("-15.49")),
-        _tx("Netflix", "Netflix", "2026-08-01", Decimal("-15.49")),
-    ]
-    recurring = detect_recurring_charges(txs)
-    assert len(recurring) == 1
-    assert recurring[0].merchant == "Netflix"
-    assert recurring[0].amount == Decimal("15.49")
-    assert recurring[0].occurrences == 2
-
-
-def test_detect_recurring_charges_ignores_one_off() -> None:
-    txs = [_tx("One Time Purchase", "Random Shop", "2026-08-01", Decimal("-40.00"))]
-    assert detect_recurring_charges(txs) == []
-
-
-def test_detect_recurring_charges_variable_amount_across_months() -> None:
-    txs = [
-        _tx("Electric Bill", "City Power", "2026-06-15", Decimal("-60.00")),
-        _tx("Electric Bill", "City Power", "2026-07-15", Decimal("-75.00")),
-        _tx("Electric Bill", "City Power", "2026-08-15", Decimal("-68.00")),
-    ]
-    recurring = detect_recurring_charges(txs)
-    assert len(recurring) == 1
-    assert recurring[0].merchant == "City Power"
-    assert recurring[0].amount is None  # varies, so no single amount
-    assert recurring[0].occurrences == 3

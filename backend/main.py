@@ -324,7 +324,6 @@ def get_summary(period: str | None = None) -> SummaryPayload:
         top_merchants=stats["top_merchants"],
         largest_transactions=stats["largest_transactions"],
         daily_series=stats["daily_series"],
-        recurring_charges=stats["recurring_charges"],
         reconciliation_warnings=stats["reconciliation_warnings"],
         narrative_markdown=narrative,
     )

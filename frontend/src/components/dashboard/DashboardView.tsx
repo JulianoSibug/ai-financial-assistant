@@ -8,7 +8,6 @@ import { FixRequestsBanner } from "./FixRequestsBanner";
 import { HeaderFigures } from "./HeaderFigures";
 import { NarrativeReport } from "./NarrativeReport";
 import { ReconciliationBanner } from "./ReconciliationBanner";
-import { RecurringCharges } from "./RecurringCharges";
 import { TopMerchants } from "./TopMerchants";
 
 interface DashboardViewProps {
@@ -64,11 +63,6 @@ export function DashboardView({ summary, onGenerateSummary, generating, fixReque
         <section>
           <h2 className="mb-4 text-sm text-ink-secondary">Top merchants</h2>
           <TopMerchants merchants={summary.top_merchants} />
-        </section>
-
-        <section>
-          <h2 className="mb-4 text-sm text-ink-secondary">Recurring charges</h2>
-          <RecurringCharges charges={summary.recurring_charges} />
         </section>
       </div>
     </div>
