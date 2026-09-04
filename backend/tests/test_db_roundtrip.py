@@ -99,3 +99,30 @@ def test_manual_override_does_not_get_clobbered_by_reingest(db_path: Path) -> No
     assert fetched is not None
     assert fetched.category == "Shopping"
     assert fetched.category_source == "manual"
+
+
+def test_delete_file_cascades_to_transactions_reconciliation_and_fix_requests(db_path: Path) -> None:
+    file_id = db.insert_file(
+        db_path, path="/tmp/c.csv", filename="c.csv", size_bytes=1, mtime=0.0,
+        sha256="hash-c", file_type="csv",
+    )
+    tx = Transaction(
+        id=db.make_transaction_id("checking", "2026-08-01", "BAD ROW", Decimal("-20.00")),
+        date="2026-08-01", description="BAD ROW", merchant="Bad Row",
+        merchant_normalized="bad row", amount=Decimal("-20.00"), account="checking",
+        source_file="c.csv", extraction_method="csv",
+    )
+    db.insert_transactions(db_path, file_id, [tx])
+    db.upsert_reconciliation(
+        db_path, file_id, statement_opening_cents=None, statement_closing_cents=None,
+        statement_total_debits_cents=None, statement_total_credits_cents=None,
+        computed_sum_cents=-2000, delta_cents=0, status="warning", detail="off by a lot",
+    )
+    db.create_fix_request(db_path, file_id, "reconciliation_warning", "off by a lot")
+
+    db.delete_file(db_path, file_id)
+
+    assert db.get_file(db_path, file_id) is None
+    assert db.get_transaction(db_path, tx.id) is None
+    assert db.get_reconciliation_warnings(db_path) == []
+    assert db.list_fix_requests(db_path, status="open") == []

@@ -23,7 +23,7 @@ from backend.ingest.parse_pdf import detect_low_extraction, parse_pdf_file
 from backend.ingest.reconcile import reconcile_file
 from backend.llm.categorize import categorize_all, extract_pdf_transactions
 from backend.llm.provider import AuthStatus, check_provider_auth, get_provider
-from backend.llm.summarize import compute_summary_stats, generate_narrative
+from backend.llm.summarize import compute_period_totals, compute_summary_stats, generate_narrative
 from backend.models import CategoryPatch, FixRequestPatch, HealthResponse, SummaryPayload, Transaction
 
 
@@ -292,6 +292,11 @@ def list_periods() -> dict:
     return {"periods": db.list_available_periods(settings.db_path)}
 
 
+@app.get("/api/trends")
+def get_trends() -> dict:
+    return {"periods": compute_period_totals(settings.db_path)}
+
+
 @app.get("/api/fix-requests")
 def list_fix_requests() -> dict:
     return {"fix_requests": db.list_fix_requests(settings.db_path, status="open")}
@@ -300,6 +305,14 @@ def list_fix_requests() -> dict:
 @app.patch("/api/fix-requests/{fix_request_id}")
 def patch_fix_request(fix_request_id: int, patch: FixRequestPatch) -> dict:
     db.resolve_fix_request(settings.db_path, fix_request_id, patch.status)
+    return {"ok": True}
+
+
+@app.delete("/api/files/{file_id}")
+def delete_file(file_id: int) -> dict:
+    if db.get_file(settings.db_path, file_id) is None:
+        raise HTTPException(404, f"No file with id {file_id}")
+    db.delete_file(settings.db_path, file_id)
     return {"ok": True}
 
 

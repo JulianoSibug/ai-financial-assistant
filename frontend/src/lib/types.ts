@@ -11,6 +11,11 @@ export interface Period {
   transaction_count: number;
 }
 
+export interface PeriodTotal {
+  period: string; // "YYYY-MM"
+  total_out: string;
+}
+
 export interface Transaction {
   id: string;
   date: string;

@@ -246,6 +246,16 @@ def get_file(db_path: Path, file_id: int) -> dict[str, Any] | None:
         return dict(row) if row else None
 
 
+def delete_file(db_path: Path, file_id: int) -> None:
+    """Deletes a file's row -- transactions, reconciliation, and
+    fix_requests all reference files(id) ON DELETE CASCADE (and every
+    connection runs PRAGMA foreign_keys=ON), so this alone cleans up
+    everything tied to it. If the file is still on disk, the next ingest
+    picks it back up fresh, since its sha256 is no longer in this table."""
+    with get_connection(db_path) as conn:
+        conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+
+
 # --- transactions --------------------------------------------------------
 
 def _row_to_transaction(row: sqlite3.Row) -> Transaction:

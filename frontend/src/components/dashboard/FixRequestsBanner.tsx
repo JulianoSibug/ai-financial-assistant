@@ -9,15 +9,22 @@ const TRIGGER_LABEL: Record<FixRequest["trigger"], string> = {
 interface FixRequestsBannerProps {
   requests: FixRequest[];
   onResolve: (id: number, status: "resolved" | "dismissed") => void;
+  onDeleteFile: (fileId: number) => void;
 }
 
-export function FixRequestsBanner({ requests, onResolve }: FixRequestsBannerProps) {
+export function FixRequestsBanner({ requests, onResolve, onDeleteFile }: FixRequestsBannerProps) {
   if (requests.length === 0) return null;
 
   return (
     <div className="mb-8 space-y-2">
       {requests.map((r) => (
-        <Banner key={r.id} tone="warning" dismissLabel="Mark fixed" onDismiss={() => onResolve(r.id, "resolved")}>
+        <Banner
+          key={r.id}
+          tone="warning"
+          dismissLabel="Mark fixed"
+          onDismiss={() => onResolve(r.id, "resolved")}
+          secondaryAction={{ label: "Delete & re-ingest", onClick: () => onDeleteFile(r.file_id) }}
+        >
           <span className="font-medium">{r.filename}</span> {TRIGGER_LABEL[r.trigger]}.{" "}
           <span className="text-ink-secondary">{r.signal_detail}</span>
         </Banner>

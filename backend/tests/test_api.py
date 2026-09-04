@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from backend import db
 from backend.config import settings
 from backend.main import app
 from backend.tests.fixtures.build_fixtures import FixtureTransaction, make_csv_statement
@@ -215,6 +216,61 @@ def test_reingest_of_already_flagged_file_does_not_duplicate_fix_request(client:
 
     fix_requests = client.get("/api/fix-requests").json()["fix_requests"]
     assert len(fix_requests) == 1
+
+
+def test_delete_file_removes_its_transactions_and_reingest_picks_it_back_up(
+    client: TestClient, api_env: Path
+) -> None:
+    make_csv_statement(
+        api_env / "checking.csv",
+        [FixtureTransaction(date(2026, 8, 1), "SOMETHING", Decimal("-20.00"))],
+    )
+    client.post("/api/ingest")
+    with client.stream("GET", "/api/ingest/status") as stream:
+        list(stream.iter_lines())
+    assert client.get("/api/transactions").json()["total"] == 1
+
+    file_id = db.list_files(settings.db_path)[0]["id"]
+
+    resp = client.delete(f"/api/files/{file_id}")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert client.get("/api/transactions").json()["total"] == 0
+
+    # The file is still on disk -- re-ingesting should pick it up fresh.
+    client.post("/api/ingest")
+    with client.stream("GET", "/api/ingest/status") as stream:
+        list(stream.iter_lines())
+    assert client.get("/api/transactions").json()["total"] == 1
+
+
+def test_delete_file_404s_for_unknown_id(client: TestClient, api_env: Path) -> None:
+    client.post("/api/ingest")
+    with client.stream("GET", "/api/ingest/status") as stream:
+        list(stream.iter_lines())
+
+    resp = client.delete("/api/files/999")
+    assert resp.status_code == 404
+
+
+def test_trends_returns_monthly_totals_ascending(client: TestClient, api_env: Path) -> None:
+    make_csv_statement(
+        api_env / "multi_month.csv",
+        [
+            FixtureTransaction(date(2026, 7, 15), "JULY PURCHASE", Decimal("-10.00")),
+            FixtureTransaction(date(2026, 8, 1), "AUGUST PURCHASE", Decimal("-30.00")),
+        ],
+    )
+    client.post("/api/ingest")
+    with client.stream("GET", "/api/ingest/status") as stream:
+        list(stream.iter_lines())
+
+    resp = client.get("/api/trends")
+    assert resp.status_code == 200
+    periods = resp.json()["periods"]
+    assert [p["period"] for p in periods] == ["2026-07", "2026-08"]
+    assert periods[0]["total_out"] == "10.00"
+    assert periods[1]["total_out"] == "30.00"
 
 
 def test_periods_lists_every_month_with_data_most_recent_first(client: TestClient, api_env: Path) -> None:

@@ -5,8 +5,19 @@ import { ProcessingView } from "./components/processing/ProcessingView";
 import { SetupView } from "./components/setup/SetupView";
 import { DashboardView } from "./components/dashboard/DashboardView";
 import { TransactionsView } from "./components/transactions/TransactionsView";
-import { ApiError, getFixRequests, getHealth, getPeriods, getSummary, resolveFixRequest, startAnalyze, startIngest } from "./lib/api";
-import type { FixRequest, HealthResponse, Period, SummaryPayload } from "./lib/types";
+import {
+  ApiError,
+  deleteFile,
+  getFixRequests,
+  getHealth,
+  getPeriods,
+  getSummary,
+  getTrends,
+  resolveFixRequest,
+  startAnalyze,
+  startIngest,
+} from "./lib/api";
+import type { FixRequest, HealthResponse, Period, PeriodTotal, SummaryPayload } from "./lib/types";
 
 type Stage =
   | { kind: "loading" }
@@ -14,7 +25,14 @@ type Stage =
   | { kind: "setup"; health: HealthResponse }
   | { kind: "processing-ingest"; url: string; returnToPeriod?: string }
   | { kind: "processing-analyze"; url: string; period: string }
-  | { kind: "ready"; health: HealthResponse; summary: SummaryPayload; periods: Period[]; fixRequests: FixRequest[] };
+  | {
+      kind: "ready";
+      health: HealthResponse;
+      summary: SummaryPayload;
+      periods: Period[];
+      fixRequests: FixRequest[];
+      trends: PeriodTotal[];
+    };
 
 export default function App() {
   const [stage, setStage] = useState<Stage>({ kind: "loading" });
@@ -29,7 +47,8 @@ export default function App() {
         const summary = await getSummary(period);
         const periods = await getPeriods();
         const fixRequests = await getFixRequests();
-        setStage({ kind: "ready", health, summary, periods, fixRequests });
+        const trends = await getTrends();
+        setStage({ kind: "ready", health, summary, periods, fixRequests, trends });
       } catch (e) {
         if (e instanceof ApiError && e.status === 404) {
           setStage({ kind: "setup", health });
@@ -67,6 +86,19 @@ export default function App() {
       await resolveFixRequest(id, status);
     } catch {
       setStage((s) => (s.kind === "ready" ? { ...s, fixRequests: previous } : s));
+    }
+  }
+
+  async function handleDeleteFile(fileId: number) {
+    if (stage.kind !== "ready") return;
+    if (!window.confirm("Delete this file's transactions? If it's still in your statements folder, the next \"Check for new statements\" will re-ingest it.")) {
+      return;
+    }
+    try {
+      await deleteFile(fileId);
+      await loadInitial(stage.summary.period);
+    } catch (e) {
+      setStage({ kind: "error", message: e instanceof Error ? e.message : "Failed to delete file." });
     }
   }
 
@@ -157,6 +189,8 @@ export default function App() {
           generating={generating}
           fixRequests={stage.fixRequests}
           onResolveFixRequest={handleResolveFixRequest}
+          onDeleteFile={handleDeleteFile}
+          trends={stage.trends}
         />
       ) : (
         <TransactionsView />

@@ -42,7 +42,7 @@ export function TopBar({ period, periods, onPeriodChange, view, onViewChange, sh
             onClick={() => onViewChange("dashboard")}
             className={view === "dashboard" ? "text-ink" : "text-ink-secondary hover:text-ink"}
           >
-            Dashboard
+            Ledger
           </button>
           <button
             onClick={() => onViewChange("transactions")}

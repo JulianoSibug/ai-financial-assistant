@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { FixRequest, SummaryPayload } from "../../lib/types";
+import type { FixRequest, PeriodTotal, SummaryPayload } from "../../lib/types";
 import { Button } from "../shared/Button";
 import { CategoryBreakdown } from "./CategoryBreakdown";
 import { DailySpendChart } from "./DailySpendChart";
@@ -9,6 +9,7 @@ import { HeaderFigures } from "./HeaderFigures";
 import { NarrativeReport } from "./NarrativeReport";
 import { ReconciliationBanner } from "./ReconciliationBanner";
 import { TopMerchants } from "./TopMerchants";
+import { TrendsChart } from "./TrendsChart";
 
 interface DashboardViewProps {
   summary: SummaryPayload;
@@ -16,9 +17,19 @@ interface DashboardViewProps {
   generating: boolean;
   fixRequests: FixRequest[];
   onResolveFixRequest: (id: number, status: "resolved" | "dismissed") => void;
+  onDeleteFile: (fileId: number) => void;
+  trends: PeriodTotal[];
 }
 
-export function DashboardView({ summary, onGenerateSummary, generating, fixRequests, onResolveFixRequest }: DashboardViewProps) {
+export function DashboardView({
+  summary,
+  onGenerateSummary,
+  generating,
+  fixRequests,
+  onResolveFixRequest,
+  onDeleteFile,
+  trends,
+}: DashboardViewProps) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   // A day selected in one period is meaningless (or out of range) once the
@@ -36,7 +47,7 @@ export function DashboardView({ summary, onGenerateSummary, generating, fixReque
       <HeaderFigures totalOut={summary.total_out} totalIn={summary.total_in} net={summary.net} />
 
       <ReconciliationBanner warnings={summary.reconciliation_warnings} />
-      <FixRequestsBanner requests={fixRequests} onResolve={onResolveFixRequest} />
+      <FixRequestsBanner requests={fixRequests} onResolve={onResolveFixRequest} onDeleteFile={onDeleteFile} />
 
       <section className="mb-10">
         <div className="mb-4 flex items-baseline justify-between">
@@ -53,6 +64,13 @@ export function DashboardView({ summary, onGenerateSummary, generating, fixReque
         <DailySpendChart data={summary.daily_series} selectedDate={selectedDay} onSelectDay={handleSelectDay} />
         {selectedDay && <DailyTransactionsPanel date={selectedDay} onClose={() => setSelectedDay(null)} />}
       </section>
+
+      {trends.length >= 2 && (
+        <section className="mb-10">
+          <h2 className="mb-4 text-sm text-ink-secondary">Trends</h2>
+          <TrendsChart data={trends} />
+        </section>
+      )}
 
       <div className="grid grid-cols-1 gap-10 md:grid-cols-2">
         <section>

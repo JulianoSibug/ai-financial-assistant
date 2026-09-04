@@ -67,6 +67,11 @@ class DailyPoint(BaseModel):
     total_out: Decimal
 
 
+class PeriodTotal(BaseModel):
+    period: str
+    total_out: Decimal
+
+
 class SummaryPayload(BaseModel):
     period: str
     total_in: Decimal

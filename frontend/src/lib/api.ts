@@ -2,6 +2,7 @@ import type {
   FixRequest,
   HealthResponse,
   Period,
+  PeriodTotal,
   SummaryPayload,
   Transaction,
   TransactionFilters,
@@ -58,6 +59,11 @@ export async function getPeriods(): Promise<Period[]> {
   return periods;
 }
 
+export async function getTrends(): Promise<PeriodTotal[]> {
+  const { periods } = await request<{ periods: PeriodTotal[] }>("/api/trends");
+  return periods;
+}
+
 export async function getFixRequests(): Promise<FixRequest[]> {
   const { fix_requests } = await request<{ fix_requests: FixRequest[] }>("/api/fix-requests");
   return fix_requests;
@@ -68,6 +74,10 @@ export function resolveFixRequest(id: number, status: "resolved" | "dismissed"):
     method: "PATCH",
     body: JSON.stringify({ status }),
   });
+}
+
+export function deleteFile(id: number): Promise<{ ok: boolean }> {
+  return request(`/api/files/${id}`, { method: "DELETE" });
 }
 
 export function getTransactions(filters: TransactionFilters): Promise<TransactionsPage> {

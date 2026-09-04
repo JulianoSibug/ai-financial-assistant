@@ -19,6 +19,7 @@ from backend.models import (
     CategoryTotal,
     DailyPoint,
     MerchantTotal,
+    PeriodTotal,
     ReconciliationWarning,
 )
 
@@ -59,6 +60,21 @@ def _prior_period(period: str) -> str:
 
 def _date_range(start: date, end: date) -> list[date]:
     return [start + timedelta(days=i) for i in range((end - start).days + 1)]
+
+
+def compute_period_totals(db_path: Path) -> list[PeriodTotal]:
+    """One deterministic pass over every transaction, grouped by calendar
+    month -- same total_out definition as compute_summary_stats (transfers
+    and money-in excluded), just across all periods at once rather than
+    recomputing full per-period stats N times. Powers the Trends chart."""
+    all_tx = db.get_all_transactions(db_path)
+    sums: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    for t in all_tx:
+        if t.is_transfer or t.amount >= 0:
+            continue
+        period = f"{t.date.year:04d}-{t.date.month:02d}"
+        sums[period] += -t.amount
+    return [PeriodTotal(period=p, total_out=sums[p]) for p in sorted(sums)]
 
 
 def compute_summary_stats(db_path: Path, period: str) -> dict:
